@@ -26,6 +26,7 @@
 #include <X11/keysym.h>
 #include <X11/Xft/Xft.h>
 #include <fontconfig/fontconfig.h>
+#include <wchar.h>
 
 #include "arg.h"
 
@@ -2908,7 +2909,8 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 				xp, winy + frc[frp].font->ascent,
 				(FcChar8 *)u8c, u8cblen);
 
-		xp += font->width;
+		// EON: prevent overlapping double width characters
+		xp += font->width * wcwidth(u8char);
 	}
 
 	/*
