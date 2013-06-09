@@ -9,7 +9,14 @@ static char font[] = "Terminus:size=10:rgba=rgb";
 static int borderpx = 3;
 static char shell[] = "/bin/sh";
 
-/* timeouts (in milliseconds) */
+/*
+ * word delimiter string
+ *
+ * More advanced example: " `'\"()[]{}"
+ */
+static char worddelimiters[] = " ";
+
+/* selection timeouts (in milliseconds) */
 static unsigned int doubleclicktimeout = 300;
 static unsigned int tripleclicktimeout = 600;
 
@@ -17,8 +24,14 @@ static unsigned int tripleclicktimeout = 600;
 static bool allowaltscreen = true;
 
 /* frames per second st should at maximum draw to the screen */
-static unsigned int xfps = 60;
+static unsigned int xfps = 120;
 static unsigned int actionfps = 30;
+
+/*
+ * blinking timeout (set to 0 to disable blinking) for the terminal blinking
+ * attribute.
+ */
+static unsigned int blinktimeout = 800;
 
 /* TERM value */
 static char termname[] = "st-256color";
@@ -71,7 +84,15 @@ static unsigned int defaultcs = 256;
 static unsigned int defaultitalic = 11;
 static unsigned int defaultunderline = 7;
 
-/* Internal shortcuts. */
+/* Internal mouse shortcuts. */
+/* Beware that overloading Button1 will disable the selection. */
+static Mousekey mshortcuts[] = {
+	/* keysym		mask		string */
+	{ Button4,		XK_ANY_MOD,	"\031"},
+	{ Button5,		XK_ANY_MOD,	"\005"},
+};
+
+/* Internal keyboard shortcuts. */
 #define MODKEY Mod1Mask
 
 static Shortcut shortcuts[] = {
