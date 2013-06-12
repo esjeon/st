@@ -78,6 +78,7 @@ char *argv0;
 #define ATTRCMP(a, b) ((a).mode != (b).mode || (a).fg != (b).fg || (a).bg != (b).bg)
 #define IS_SET(flag) ((term.mode & (flag)) != 0)
 #define TIMEDIFF(t1, t2) ((t1.tv_sec-t2.tv_sec)*1000 + (t1.tv_usec-t2.tv_usec)/1000)
+#define USE_ARGB (alpha != OPAQUE && opt_embed == NULL)
 
 #define VT102ID "\033[?6c"
 
@@ -2584,9 +2585,11 @@ xloadcols(void) {
 	}
 
 	/* set alpha value of bg color */
-	dc.col[defaultbg].color.alpha = (0xffff * alpha) / OPAQUE; //0xcccc;
-	dc.col[defaultbg].pixel &= 0x00111111;
-	dc.col[defaultbg].pixel |= alpha << 24; // 0xcc000000;
+	if (USE_ARGB) {
+		dc.col[defaultbg].color.alpha = (0xffff * alpha) / OPAQUE; //0xcccc;
+		dc.col[defaultbg].pixel &= 0x00111111;
+		dc.col[defaultbg].pixel |= alpha << 24; // 0xcc000000;
+	}
 
 	/* load colors [16-255] ; same colors as xterm */
 	for(i = 16, r = 0; r < 6; r++) {
@@ -2832,12 +2835,11 @@ xinit(void) {
 	Window parent;
 	int sw, sh;
 
-	xw.depth = (alpha == OPAQUE)? XDefaultDepth(xw.dpy, xw.scr): 32;
-
 	if(!(xw.dpy = XOpenDisplay(NULL)))
 		die("Can't open display\n");
 	xw.scr = XDefaultScreen(xw.dpy);
-	if (alpha == OPAQUE)
+	xw.depth = (USE_ARGB)? 32: XDefaultDepth(xw.dpy, xw.scr);
+	if (! USE_ARGB)
 		xw.vis = XDefaultVisual(xw.dpy, xw.scr);
 	else {
 		XVisualInfo *vis;
@@ -2877,7 +2879,7 @@ xinit(void) {
 	xloadfonts(usedfont, 0);
 
 	/* colors */
-	if (alpha == OPAQUE)
+	if (! USE_ARGB)
 		xw.cmap = XDefaultColormap(xw.dpy, xw.scr);
 	else
 		xw.cmap = XCreateColormap(xw.dpy, XRootWindow(xw.dpy, xw.scr), xw.vis, None);
@@ -2922,7 +2924,7 @@ xinit(void) {
 	gcvalues.graphics_exposures = False;
 	xw.buf = XCreatePixmap(xw.dpy, xw.win, xw.w, xw.h, xw.depth);
 	dc.gc = XCreateGC(xw.dpy,
-			(alpha == OPAQUE)? parent: xw.buf,
+			(USE_ARGB)? xw.buf: parent,
 			GCGraphicsExposures,
 			&gcvalues);
 	XSetForeground(xw.dpy, dc.gc, dc.col[defaultbg].pixel);
