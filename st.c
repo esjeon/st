@@ -89,7 +89,8 @@ enum glyph_attribute {
 	ATTR_ITALIC    = 16,
 	ATTR_BLINK     = 32,
 	ATTR_WRAP      = 64,
-	ATTR_DUMMY     = 128,
+	ATTR_WIDE      = 128,
+	ATTR_DUMMY     = 256,
 };
 
 enum cursor_movement {
@@ -163,7 +164,7 @@ typedef unsigned short ushort;
 
 typedef struct {
 	char c[UTF_SIZ];     /* character code */
-	uchar mode;  /* attribute flags */
+	ushort mode;  /* attribute flags */
 	ushort fg;   /* foreground  */
 	ushort bg;   /* background  */
 } Glyph;
@@ -951,7 +952,7 @@ selcopy(void) {
 				/* nothing */;
 
 			for(x = 0; gp <= last; x++, ++gp) {
-				if(!selected(x, y) || gp->c[0] == '\0') {
+				if(!selected(x, y) || (gp->mode & ATTR_DUMMY)) {
 					continue;
 				}
 
@@ -2483,8 +2484,12 @@ tputc(char *c, int len) {
 		tnewline(1);
 
 	tsetchar(c, &term.c.attr, term.c.x, term.c.y);
-	if (width >= 2) tputnull(term.c.x + 1, term.c.y);
-	if (width >= 3) tputnull(term.c.x + 2, term.c.y);
+
+	if (width == 2) {
+		term.line[term.c.y][term.c.x].mode |= ATTR_WIDE;
+		tputnull(term.c.x + 1, term.c.y);
+	}
+
 	if(term.c.x + width < term.col) {
 		tmoveto(term.c.x + width, term.c.y);
 	} else {
@@ -3192,7 +3197,6 @@ xdrawcursor(void) {
 	static int oldx = 0, oldy = 0;
 	int sl;
 	int width;
-	long u8char;
 	Glyph g = {{' '}, ATTR_NULL, defaultbg, defaultcs};
 
 	LIMIT(oldx, 0, term.col-1);
@@ -3201,8 +3205,8 @@ xdrawcursor(void) {
 	memcpy(g.c, term.line[term.c.y][term.c.x].c, UTF_SIZ);
 
 	/* remove the old cursor */
-	sl = utf8decode(term.line[oldy][oldx].c, &u8char);
-	width = wcwidth(u8char);
+	sl = utf8size(term.line[oldy][oldx].c);
+	width = (term.line[oldy][oldx].mode & ATTR_WIDE)? 2: 1;
 	xdraws(term.line[oldy][oldx].c, term.line[oldy][oldx], oldx,
 			oldy, width, sl);
 
@@ -3215,8 +3219,8 @@ xdrawcursor(void) {
 				g.bg = defaultfg;
 			}
 
-			sl = utf8decode(g.c, &u8char);
-			width = wcwidth(u8char);
+			sl = utf8size(g.c);
+			width = (term.line[term.c.y][term.c.x].mode & ATTR_WIDE)? 2: 1;
 			xdraws(g.c, g, term.c.x, term.c.y, width, sl);
 		} else {
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
@@ -3318,7 +3322,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 			sl = utf8decode(new.c, &u8char);
 			memcpy(buf+ib, new.c, sl);
 			ib += sl;
-			ic += wcwidth(u8char);
+			ic += (new.mode & ATTR_WIDE)? 2: 1;
 		}
 		if(ib > 0)
 			xdraws(buf, base, ox, y, ic, ib);
