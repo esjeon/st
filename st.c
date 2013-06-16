@@ -27,6 +27,7 @@
 #include <X11/keysym.h>
 #include <X11/Xft/Xft.h>
 #include <fontconfig/fontconfig.h>
+#include <wchar.h>
 
 #include "arg.h"
 
@@ -88,6 +89,7 @@ enum glyph_attribute {
 	ATTR_ITALIC    = 16,
 	ATTR_BLINK     = 32,
 	ATTR_WRAP      = 64,
+	ATTR_DUMMY     = 128,
 };
 
 enum cursor_movement {
@@ -949,8 +951,9 @@ selcopy(void) {
 				/* nothing */;
 
 			for(x = 0; gp <= last; x++, ++gp) {
-				if(!selected(x, y))
+				if(!selected(x, y) || gp->c[0] == '\0') {
 					continue;
+				}
 
 				size = utf8size(gp->c);
 				memcpy(ptr, gp->c, size);
@@ -1553,6 +1556,13 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 	term.dirty[y] = 1;
 	term.line[y][x] = *attr;
 	memcpy(term.line[y][x].c, c, UTF_SIZ);
+}
+
+void
+tputnull(int x, int y) {
+	term.dirty[y] = 1;
+	term.line[y][x].c[0] = '\0';
+	term.line[y][x].mode = ATTR_DUMMY;
 }
 
 void
@@ -2214,6 +2224,15 @@ void
 tputc(char *c, int len) {
 	uchar ascii = *c;
 	bool control = ascii < '\x20' || ascii == 0177;
+	long u8char;
+	int width;
+
+	if(len == 1)
+		width = 1;
+	else {
+		utf8decode(c, &u8char);
+		width = wcwidth(u8char);
+	}
 
 	if(iofd != -1) {
 		if(xwrite(iofd, c, len) < 0) {
@@ -2460,9 +2479,14 @@ tputc(char *c, int len) {
 			(term.col - term.c.x - 1) * sizeof(Glyph));
 	}
 
+	if(term.c.x + width > term.col)
+		tnewline(1);
+
 	tsetchar(c, &term.c.attr, term.c.x, term.c.y);
-	if(term.c.x+1 < term.col) {
-		tmoveto(term.c.x+1, term.c.y);
+	if (width >= 2) tputnull(term.c.x + 1, term.c.y);
+	if (width >= 3) tputnull(term.c.x + 2, term.c.y);
+	if(term.c.x + width < term.col) {
+		tmoveto(term.c.x + width, term.c.y);
 	} else {
 		term.c.state |= CURSOR_WRAPNEXT;
 	}
@@ -3146,7 +3170,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 				xp, winy + frc[frp].font->ascent,
 				(FcChar8 *)u8c, u8cblen);
 
-		xp += font->width;
+		xp += font->width * wcwidth(u8char);
 	}
 
 	/*
@@ -3167,6 +3191,8 @@ void
 xdrawcursor(void) {
 	static int oldx = 0, oldy = 0;
 	int sl;
+	int width;
+	long u8char;
 	Glyph g = {{' '}, ATTR_NULL, defaultbg, defaultcs};
 
 	LIMIT(oldx, 0, term.col-1);
@@ -3175,9 +3201,10 @@ xdrawcursor(void) {
 	memcpy(g.c, term.line[term.c.y][term.c.x].c, UTF_SIZ);
 
 	/* remove the old cursor */
-	sl = utf8size(term.line[oldy][oldx].c);
+	sl = utf8decode(term.line[oldy][oldx].c, &u8char);
+	width = wcwidth(u8char);
 	xdraws(term.line[oldy][oldx].c, term.line[oldy][oldx], oldx,
-			oldy, 1, sl);
+			oldy, width, sl);
 
 	/* draw the new one */
 	if(!(IS_SET(MODE_HIDE))) {
@@ -3188,8 +3215,9 @@ xdrawcursor(void) {
 				g.bg = defaultfg;
 			}
 
-			sl = utf8size(g.c);
-			xdraws(g.c, g, term.c.x, term.c.y, 1, sl);
+			sl = utf8decode(g.c, &u8char);
+			width = wcwidth(u8char);
+			xdraws(g.c, g, term.c.x, term.c.y, width, sl);
 		} else {
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
 					borderpx + term.c.x * xw.cw,
@@ -3256,6 +3284,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 	Glyph base, new;
 	char buf[DRAW_BUF_SIZ];
 	bool ena_sel = sel.ob.x != -1;
+	long u8char;
 
 	if(sel.alt ^ IS_SET(MODE_ALTSCREEN))
 		ena_sel = 0;
@@ -3273,6 +3302,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 		ic = ib = ox = 0;
 		for(x = x1; x < x2; x++) {
 			new = term.line[y][x];
+			if(new.mode == ATTR_DUMMY) continue;
 			if(ena_sel && selected(x, y))
 				new.mode ^= ATTR_REVERSE;
 			if(ib > 0 && (ATTRCMP(base, new)
@@ -3285,10 +3315,10 @@ drawregion(int x1, int y1, int x2, int y2) {
 				base = new;
 			}
 
-			sl = utf8size(new.c);
+			sl = utf8decode(new.c, &u8char);
 			memcpy(buf+ib, new.c, sl);
 			ib += sl;
-			++ic;
+			ic += wcwidth(u8char);
 		}
 		if(ib > 0)
 			xdraws(buf, base, ox, y, ic, ib);
