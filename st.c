@@ -1559,6 +1559,14 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 		}
 	}
 
+	if(term.line[y][x].mode & ATTR_WIDE) {
+		term.line[y][x + 1].c[0] = ' ';
+		term.line[y][x + 1].mode &= ~ATTR_DUMMY;
+	} else if(term.line[y][x].mode & ATTR_DUMMY) {
+		term.line[y][x - 1].c[0] = ' ';
+		term.line[y][x - 1].mode &= ATTR_WIDE;
+	}
+
 	term.dirty[y] = 1;
 	term.line[y][x] = *attr;
 	memcpy(term.line[y][x].c, c, UTF_SIZ);
