@@ -734,6 +734,11 @@ selsnap(int mode, int *x, int *y, int direction) {
 				}
 			}
 
+			if(term.line[*y][*x + direction].mode & ATTR_DUMMY) {
+				*x += direction;
+				continue;
+			}
+
 			if(strchr(worddelimiters,
 					term.line[*y][*x + direction].c[0])) {
 				break;
