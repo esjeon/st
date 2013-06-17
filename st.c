@@ -91,6 +91,8 @@ enum glyph_attribute {
 	ATTR_ITALIC    = 16,
 	ATTR_BLINK     = 32,
 	ATTR_WRAP      = 64,
+	ATTR_WIDE      = 128,
+	ATTR_DUMMY     = 256,
 };
 
 enum cursor_movement {
@@ -164,7 +166,7 @@ typedef unsigned short ushort;
 
 typedef struct {
 	char c[UTF_SIZ];     /* character code */
-	uchar mode;  /* attribute flags */
+	ushort mode;  /* attribute flags */
 	ushort fg;   /* foreground  */
 	ushort bg;   /* background  */
 } Glyph;
@@ -735,6 +737,11 @@ selsnap(int mode, int *x, int *y, int direction) {
 				}
 			}
 
+			if(term.line[*y][*x + direction].mode & ATTR_DUMMY) {
+				*x += direction;
+				continue;
+			}
+
 			if(strchr(worddelimiters,
 					term.line[*y][*x + direction].c[0])) {
 				break;
@@ -953,8 +960,9 @@ selcopy(void) {
 				/* nothing */;
 
 			for(x = 0; gp <= last; x++, ++gp) {
-				if(!selected(x, y))
+				if(!selected(x, y) || (gp->mode & ATTR_DUMMY)) {
 					continue;
+				}
 
 				size = utf8size(gp->c);
 				memcpy(ptr, gp->c, size);
@@ -1554,9 +1562,24 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 		}
 	}
 
+	if(term.line[y][x].mode & ATTR_WIDE) {
+		term.line[y][x + 1].c[0] = ' ';
+		term.line[y][x + 1].mode &= ~ATTR_DUMMY;
+	} else if(term.line[y][x].mode & ATTR_DUMMY) {
+		term.line[y][x - 1].c[0] = ' ';
+		term.line[y][x - 1].mode &= ATTR_WIDE;
+	}
+
 	term.dirty[y] = 1;
 	term.line[y][x] = *attr;
 	memcpy(term.line[y][x].c, c, UTF_SIZ);
+}
+
+void
+tputnull(int x, int y) {
+	term.dirty[y] = 1;
+	term.line[y][x].c[0] = '\0';
+	term.line[y][x].mode = ATTR_DUMMY;
 }
 
 void
@@ -2218,6 +2241,15 @@ void
 tputc(char *c, int len) {
 	uchar ascii = *c;
 	bool control = ascii < '\x20' || ascii == 0177;
+	long u8char;
+	int width;
+
+	if(len == 1)
+		width = 1;
+	else {
+		utf8decode(c, &u8char);
+		width = wcwidth(u8char);
+	}
 
 	if(iofd != -1) {
 		if(xwrite(iofd, c, len) < 0) {
@@ -2464,9 +2496,18 @@ tputc(char *c, int len) {
 			(term.col - term.c.x - 1) * sizeof(Glyph));
 	}
 
+	if(term.c.x + width > term.col)
+		tnewline(1);
+
 	tsetchar(c, &term.c.attr, term.c.x, term.c.y);
-	if(term.c.x+1 < term.col) {
-		tmoveto(term.c.x+1, term.c.y);
+
+	if (width == 2) {
+		term.line[term.c.y][term.c.x].mode |= ATTR_WIDE;
+		tputnull(term.c.x + 1, term.c.y);
+	}
+
+	if(term.c.x + width < term.col) {
+		tmoveto(term.c.x + width, term.c.y);
 	} else {
 		term.c.state |= CURSOR_WRAPNEXT;
 	}
@@ -3191,7 +3232,6 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 				xp, winy + frc[frp].font->ascent,
 				(FcChar8 *)u8c, u8cblen);
 
-		// EON: prevent overlapping double width characters
 		xp += font->width * wcwidth(u8char);
 	}
 
@@ -3213,6 +3253,7 @@ void
 xdrawcursor(void) {
 	static int oldx = 0, oldy = 0;
 	int sl;
+	int width;
 	Glyph g = {{' '}, ATTR_NULL, defaultbg, defaultcs};
 
 	LIMIT(oldx, 0, term.col-1);
@@ -3222,8 +3263,9 @@ xdrawcursor(void) {
 
 	/* remove the old cursor */
 	sl = utf8size(term.line[oldy][oldx].c);
+	width = (term.line[oldy][oldx].mode & ATTR_WIDE)? 2: 1;
 	xdraws(term.line[oldy][oldx].c, term.line[oldy][oldx], oldx,
-			oldy, 1, sl);
+			oldy, width, sl);
 
 	/* draw the new one */
 	if(!(IS_SET(MODE_HIDE))) {
@@ -3235,7 +3277,8 @@ xdrawcursor(void) {
 			}
 
 			sl = utf8size(g.c);
-			xdraws(g.c, g, term.c.x, term.c.y, 1, sl);
+			width = (term.line[term.c.y][term.c.x].mode & ATTR_WIDE)? 2: 1;
+			xdraws(g.c, g, term.c.x, term.c.y, width, sl);
 		} else {
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
 					borderpx + term.c.x * xw.cw,
@@ -3302,6 +3345,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 	Glyph base, new;
 	char buf[DRAW_BUF_SIZ];
 	bool ena_sel = sel.ob.x != -1;
+	long u8char;
 
 	if(sel.alt ^ IS_SET(MODE_ALTSCREEN))
 		ena_sel = 0;
@@ -3319,6 +3363,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 		ic = ib = ox = 0;
 		for(x = x1; x < x2; x++) {
 			new = term.line[y][x];
+			if(new.mode == ATTR_DUMMY) continue;
 			if(ena_sel && selected(x, y))
 				new.mode ^= ATTR_REVERSE;
 			if(ib > 0 && (ATTRCMP(base, new)
@@ -3331,10 +3376,10 @@ drawregion(int x1, int y1, int x2, int y2) {
 				base = new;
 			}
 
-			sl = utf8size(new.c);
+			sl = utf8decode(new.c, &u8char);
 			memcpy(buf+ib, new.c, sl);
 			ib += sl;
-			++ic;
+			ic += (new.mode & ATTR_WIDE)? 2: 1;
 		}
 		if(ib > 0)
 			xdraws(buf, base, ox, y, ic, ib);
