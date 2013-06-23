@@ -481,7 +481,7 @@ typedef struct {
  * the current length of used elements.
  */
 
-static Fontcache frc[1024];
+static Fontcache frc[fontcachesize];
 static int frccur = -1, frclen = 0;
 
 ssize_t
@@ -3258,6 +3258,9 @@ xdrawcursor(void) {
 
 	LIMIT(oldx, 0, term.col-1);
 	LIMIT(oldy, 0, term.row-1);
+
+	if(term.line[oldy][oldx].mode & ATTR_DUMMY)
+		oldx --;
 
 	memcpy(g.c, term.line[term.c.y][term.c.x].c, UTF_SIZ);
 
