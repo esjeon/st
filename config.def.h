@@ -39,7 +39,7 @@ static char termname[] = "st-256color";
 static unsigned int tabspaces = 8;
 
 /* Fontcache size. Larger size enhances wide-character drawing performance */
-static unsigned int fontcachesize = 1024;
+#define FONTCACHE_SIZE 1024
 
 
 /* Terminal colors (16 first used in escape sequence) */
