@@ -1564,7 +1564,7 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 		term.line[y][x + 1].mode &= ~ATTR_DUMMY;
 	} else if(term.line[y][x].mode & ATTR_DUMMY) {
 		term.line[y][x - 1].c[0] = ' ';
-		term.line[y][x - 1].mode &= ATTR_WIDE;
+		term.line[y][x - 1].mode &= ~ATTR_WIDE;
 	}
 
 	term.dirty[y] = 1;
