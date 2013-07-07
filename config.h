@@ -5,7 +5,7 @@
  *
  * font: see http://freedesktop.org/software/fontconfig/fontconfig-user.html
  */
-static char font[] = "Terminus:size=10:rgba=rgb";
+static char font[] = "Inconsolata:size=10:rgba=rgb";
 static int borderpx = 3;
 static char shell[] = "/bin/sh";
 
