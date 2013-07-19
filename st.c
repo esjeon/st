@@ -3201,6 +3201,7 @@ xdrawcursor(void) {
 	static int oldx = 0, oldy = 0;
 	int sl;
 	int width;
+	int x;
 	Glyph g = {{' '}, ATTR_NULL, defaultbg, defaultcs};
 
 	LIMIT(oldx, 0, term.col-1);
@@ -3209,7 +3210,9 @@ xdrawcursor(void) {
 	if(term.line[oldy][oldx].mode & ATTR_DUMMY)
 		oldx --;
 
-	memcpy(g.c, term.line[term.c.y][term.c.x].c, UTF_SIZ);
+	x = term.c.x - ((term.line[term.c.y][term.c.x].mode & ATTR_DUMMY)? 1: 0);
+
+	memcpy(g.c, term.line[term.c.y][x].c, UTF_SIZ);
 
 	/* remove the old cursor */
 	sl = utf8size(term.line[oldy][oldx].c);
@@ -3227,27 +3230,27 @@ xdrawcursor(void) {
 			}
 
 			sl = utf8size(g.c);
-			width = (term.line[term.c.y][term.c.x].mode & ATTR_WIDE)? 2: 1;
-			xdraws(g.c, g, term.c.x, term.c.y, width, sl);
+			width = (term.line[term.c.y][x].mode & ATTR_WIDE)? 2: 1;
+			xdraws(g.c, g, x, term.c.y, width, sl);
 		} else {
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + term.c.x * xw.cw,
+					borderpx + x * xw.cw,
 					borderpx + term.c.y * xw.ch,
 					xw.cw - 1, 1);
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + term.c.x * xw.cw,
+					borderpx + x * xw.cw,
 					borderpx + term.c.y * xw.ch,
 					1, xw.ch - 1);
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + (term.c.x + 1) * xw.cw - 1,
+					borderpx + (x + 1) * xw.cw - 1,
 					borderpx + term.c.y * xw.ch,
 					1, xw.ch - 1);
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + term.c.x * xw.cw,
+					borderpx + x * xw.cw,
 					borderpx + (term.c.y + 1) * xw.ch - 1,
 					xw.cw, 1);
 		}
-		oldx = term.c.x, oldy = term.c.y;
+		oldx = x, oldy = term.c.y;
 	}
 }
 
