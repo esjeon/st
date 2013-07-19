@@ -41,9 +41,6 @@ static unsigned int tabspaces = 8;
 /* background opacity */
 static const int alpha = 0xdd;
 
-/* Fontcache size. Larger size enhances wide-character drawing performance */
-#define FONTCACHE_SIZE 1024
-
 /* Terminal colors (16 first used in escape sequence) */
 static const char *colorname[] = {
 	/* 8 normal colors */
