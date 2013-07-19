@@ -3666,7 +3666,8 @@ run(void) {
 		if(dodraw) {
 			while(XPending(xw.dpy)) {
 				XNextEvent(xw.dpy, &ev);
-				while(XCheckTypedEvent(xw.dpy, ev.type, &ev));
+				if(XFilterEvent(&ev, None))
+					continue;
 				if(handler[ev.type])
 					(handler[ev.type])(&ev);
 			}
