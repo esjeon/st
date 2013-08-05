@@ -1566,13 +1566,6 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 }
 
 void
-tputnull(int x, int y) {
-	term.dirty[y] = 1;
-	term.line[y][x].c[0] = '\0';
-	term.line[y][x].mode = ATTR_DUMMY;
-}
-
-void
 tclearregion(int x1, int y1, int x2, int y2) {
 	int x, y, temp;
 
@@ -2519,7 +2512,8 @@ tputc(char *c, int len) {
 
 	if (width == 2) {
 		term.line[term.c.y][term.c.x].mode |= ATTR_WIDE;
-		tputnull(term.c.x + 1, term.c.y);
+		term.line[term.c.y][term.c.x + 1].c[0] = '\0';
+		term.line[term.c.y][term.c.x + 1].mode = ATTR_DUMMY;
 	}
 
 	if(term.c.x + width < term.col) {
