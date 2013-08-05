@@ -732,6 +732,7 @@ selsnap(int mode, int *x, int *y, int direction) {
 				}
 			}
 
+			/* skip dummies */
 			if(term.line[*y][*x + direction].mode & ATTR_DUMMY) {
 				*x += direction;
 				continue;
@@ -950,9 +951,8 @@ selcopy(void) {
 				/* nothing */;
 
 			for(x = 0; gp <= last; x++, ++gp) {
-				if(!selected(x, y) || (gp->mode & ATTR_DUMMY)) {
+				if(!selected(x, y) || (gp->mode & ATTR_DUMMY))
 					continue;
-				}
 
 				size = utf8size(gp->c);
 				memcpy(ptr, gp->c, size);
@@ -1552,6 +1552,7 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 		}
 	}
 
+	/* remove the whole wide character */
 	if(term.line[y][x].mode & ATTR_WIDE) {
 		term.line[y][x + 1].c[0] = ' ';
 		term.line[y][x + 1].mode &= ~ATTR_DUMMY;
@@ -2510,7 +2511,7 @@ tputc(char *c, int len) {
 
 	tsetchar(c, &term.c.attr, term.c.x, term.c.y);
 
-	if (width == 2) {
+	if(width == 2) {
 		term.line[term.c.y][term.c.x].mode |= ATTR_WIDE;
 		term.line[term.c.y][term.c.x + 1].c[0] = '\0';
 		term.line[term.c.y][term.c.x + 1].mode = ATTR_DUMMY;
@@ -3234,20 +3235,21 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 void
 xdrawcursor(void) {
 	static int oldx = 0, oldy = 0;
-	int sl;
-	int width;
-	int x;
+	int sl, width, curx;
 	Glyph g = {{' '}, ATTR_NULL, defaultbg, defaultcs};
 
 	LIMIT(oldx, 0, term.col-1);
 	LIMIT(oldy, 0, term.row-1);
 
+	curx = term.c.x;
+
+	/* if the cursor was/is on a dummy, adjust the coordinate */
 	if(term.line[oldy][oldx].mode & ATTR_DUMMY)
 		oldx --;
+	if(term.line[term.c.y][curx].mode & ATTR_DUMMY)
+		curx --;
 
-	x = term.c.x - ((term.line[term.c.y][term.c.x].mode & ATTR_DUMMY)? 1: 0);
-
-	memcpy(g.c, term.line[term.c.y][x].c, UTF_SIZ);
+	memcpy(g.c, term.line[term.c.y][curx].c, UTF_SIZ);
 
 	/* remove the old cursor */
 	sl = utf8size(term.line[oldy][oldx].c);
@@ -3265,27 +3267,27 @@ xdrawcursor(void) {
 			}
 
 			sl = utf8size(g.c);
-			width = (term.line[term.c.y][x].mode & ATTR_WIDE)? 2: 1;
-			xdraws(g.c, g, x, term.c.y, width, sl);
+			width = (term.line[term.c.y][curx].mode & ATTR_WIDE)? 2: 1;
+			xdraws(g.c, g, curx, term.c.y, width, sl);
 		} else {
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + x * xw.cw,
+					borderpx + curx * xw.cw,
 					borderpx + term.c.y * xw.ch,
 					xw.cw - 1, 1);
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + x * xw.cw,
+					borderpx + curx * xw.cw,
 					borderpx + term.c.y * xw.ch,
 					1, xw.ch - 1);
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + (x + 1) * xw.cw - 1,
+					borderpx + (curx + 1) * xw.cw - 1,
 					borderpx + term.c.y * xw.ch,
 					1, xw.ch - 1);
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
-					borderpx + x * xw.cw,
+					borderpx + curx * xw.cw,
 					borderpx + (term.c.y + 1) * xw.ch - 1,
 					xw.cw, 1);
 		}
-		oldx = x, oldy = term.c.y;
+		oldx = curx, oldy = term.c.y;
 	}
 }
 
@@ -3351,7 +3353,8 @@ drawregion(int x1, int y1, int x2, int y2) {
 		ic = ib = ox = 0;
 		for(x = x1; x < x2; x++) {
 			new = term.line[y][x];
-			if(new.mode == ATTR_DUMMY) continue;
+			if(new.mode == ATTR_DUMMY)
+				continue;
 			if(ena_sel && selected(x, y))
 				new.mode ^= ATTR_REVERSE;
 			if(ib > 0 && (ATTRCMP(base, new)
