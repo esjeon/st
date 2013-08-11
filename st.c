@@ -2982,7 +2982,7 @@ xinit(void) {
 	gcvalues.graphics_exposures = False;
 	xw.buf = XCreatePixmap(xw.dpy, xw.win, xw.w, xw.h, xw.depth);
 	dc.gc = XCreateGC(xw.dpy,
-			(USE_ARGB)? xw.buf: parent,
+			xw.buf,
 			GCGraphicsExposures,
 			&gcvalues);
 	XSetForeground(xw.dpy, dc.gc, dc.col[defaultbg].pixel);
