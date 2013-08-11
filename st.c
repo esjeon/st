@@ -79,6 +79,7 @@ char *argv0;
 #define IS_SET(flag) ((term.mode & (flag)) != 0)
 #define TIMEDIFF(t1, t2) ((t1.tv_sec-t2.tv_sec)*1000 + (t1.tv_usec-t2.tv_usec)/1000)
 #define USE_ARGB (alpha != OPAQUE && opt_embed == NULL)
+#define CEIL(x) (((x) != (int) (x)) ? (x) + 1 : (x))
 
 #define TRUECOLOR(r,g,b) (1 << 24 | (r) << 16 | (g) << 8 | (b))
 #define IS_TRUECOL(x)    (1 << 24 & (x))
@@ -367,7 +368,7 @@ static void tsetdirtattr(int);
 static void tsetmode(bool, bool, int *, int);
 static void tfulldirt(void);
 static void techo(char *, int);
-static ulong tdefcolor(int *, int *, int);
+static long tdefcolor(int *, int *, int);
 static inline bool match(uint, uint);
 static void ttynew(void);
 static void ttyread(void);
@@ -1646,7 +1647,7 @@ tdeleteline(int n) {
 	tscrollup(term.c.y, n);
 }
 
-ulong
+long
 tdefcolor(int *attr, int *npar, int l) {
 	long idx = -1;
 	uint r, g, b;
@@ -1697,7 +1698,7 @@ tdefcolor(int *attr, int *npar, int l) {
 void
 tsetattr(int *attr, int l) {
 	int i;
-	ulong idx;
+	long idx;
 
 	for(i = 0; i < l; i++) {
 		switch(attr[i]) {
@@ -2823,8 +2824,8 @@ xloadfonts(char *fontstr, int fontsize) {
 		die("st: can't open font %s\n", fontstr);
 
 	/* Setting character width and height. */
-	xw.cw = dc.font.width;
-	xw.ch = dc.font.height;
+	xw.cw = CEIL(dc.font.width * cwscale);
+	xw.ch = CEIL(dc.font.height * chscale);
 
 	FcPatternDel(pattern, FC_SLANT);
 	FcPatternAddInteger(pattern, FC_SLANT, FC_SLANT_ITALIC);
@@ -3041,6 +3042,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 	Colour *fg, *bg, *temp, revfg, revbg, truefg, truebg;
 	XRenderColor colfg, colbg;
 	Rectangle r;
+	int oneatatime;
 
 	frcflags = FRC_NORMAL;
 
@@ -3168,6 +3170,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 		u8fs = s;
 		u8fblen = 0;
 		u8fl = 0;
+		oneatatime = font->width != xw.cw;
 		for(;;) {
 			u8c = s;
 			u8cblen = utf8decode(s, &u8char);
@@ -3175,8 +3178,8 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			bytelen -= u8cblen;
 
 			doesexist = XftCharExists(xw.dpy, font->match, u8char);
-			if(!doesexist || bytelen <= 0) {
-				if(bytelen <= 0) {
+			if(oneatatime || !doesexist || bytelen <= 0) {
+				if(oneatatime || bytelen <= 0) {
 					if(doesexist) {
 						u8fl++;
 						u8fblen += u8cblen;
@@ -3189,7 +3192,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 							winy + font->ascent,
 							(FcChar8 *)u8fs,
 							u8fblen);
-					xp += font->width * u8fl;
+					xp += CEIL(font->width * cwscale * u8fl);
 
 				}
 				break;
@@ -3198,8 +3201,11 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			u8fl++;
 			u8fblen += u8cblen;
 		}
-		if(doesexist)
+		if(doesexist) {
+			if (oneatatime);
+				continue;
 			break;
+		}
 
 		/* Search the font cache. */
 		for(i = 0; i < frclen; i++) {
@@ -3259,7 +3265,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 				xp, winy + frc[i].font->ascent,
 				(FcChar8 *)u8c, u8cblen);
 
-		xp += font->width * wcwidth(u8char);
+		xp += CEIL(font->width * cwscale * wcwidth(u8char));
 	}
 
 	/*
@@ -3343,6 +3349,7 @@ xsettitle(char *p) {
 	Xutf8TextListToTextProperty(xw.dpy, &p, 1, XUTF8StringStyle,
 			&prop);
 	XSetWMName(xw.dpy, xw.win, &prop);
+	XFree(prop.value);
 }
 
 void
@@ -3694,8 +3701,8 @@ run(void) {
 			ttyread();
 			if(blinktimeout) {
 				blinkset = tattrset(ATTR_BLINK);
-				if(!blinkset && term.mode & ATTR_BLINK)
-					term.mode &= ~(MODE_BLINK);
+				if(!blinkset)
+					MODBIT(term.mode, 0, MODE_BLINK);
 			}
 		}
 
