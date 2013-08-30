@@ -3148,7 +3148,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 							winy + font->ascent,
 							(FcChar8 *)u8fs,
 							u8fblen);
-					xp += CEIL(font->width * cwscale * u8fl);
+					xp += xw.cw * u8fl;
 
 				}
 				break;
@@ -3158,7 +3158,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			u8fblen += u8cblen;
 		}
 		if(doesexist) {
-			if (oneatatime);
+			if (oneatatime)
 				continue;
 			break;
 		}
@@ -3221,7 +3221,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 				xp, winy + frc[i].font->ascent,
 				(FcChar8 *)u8c, u8cblen);
 
-		xp += CEIL(font->width * cwscale * wcwidth(u8char));
+		xp += xw.cw * wcwidth(u8char);
 	}
 
 	/*
@@ -3764,7 +3764,7 @@ main(int argc, char *argv[]) {
 			xw.fh = (int)hr;
 		if(bitm & XNegative && xw.fx == 0)
 			xw.fx = -1;
-		if(bitm & XNegative && xw.fy == 0)
+		if(bitm & YNegative && xw.fy == 0)
 			xw.fy = -1;
 
 		if(xw.fh != 0 && xw.fw != 0)
