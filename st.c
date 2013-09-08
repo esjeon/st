@@ -170,7 +170,7 @@ typedef unsigned short ushort;
 
 typedef struct {
 	char c[UTF_SIZ]; /* character code */
-	ushort mode;     /* attribute flags */
+	ushort mode;      /* attribute flags */
 	ulong fg;        /* foreground  */
 	ulong bg;        /* background  */
 } Glyph;
@@ -426,7 +426,6 @@ static int isfullutf8(char *, int);
 static ssize_t xwrite(int, char *, size_t);
 static void *xmalloc(size_t);
 static void *xrealloc(void *, size_t);
-static void *xcalloc(size_t, size_t);
 
 static void (*handler[LASTEvent])(XEvent *) = {
 	[KeyPress] = kpress,
@@ -510,16 +509,6 @@ xmalloc(size_t len) {
 void *
 xrealloc(void *p, size_t len) {
 	if((p = realloc(p, len)) == NULL)
-		die("Out of memory\n");
-
-	return p;
-}
-
-void *
-xcalloc(size_t nmemb, size_t size) {
-	void *p = calloc(nmemb, size);
-
-	if(!p)
 		die("Out of memory\n");
 
 	return p;
@@ -736,14 +725,13 @@ selsnap(int mode, int *x, int *y, int direction) {
 				}
 			}
 
-			/* skip dummies */
-			if(term.line[*y][*x + direction].mode & ATTR_WDUMMY) {
+			if(term.line[*y][*x+direction].mode & ATTR_WDUMMY) {
 				*x += direction;
 				continue;
 			}
 
 			if(strchr(worddelimiters,
-					term.line[*y][*x + direction].c[0])) {
+					term.line[*y][*x+direction].c[0])) {
 				break;
 			}
 
@@ -1382,7 +1370,7 @@ treset(void) {
 
 void
 tnew(int col, int row) {
-	memset(&term, 0, sizeof(Term));
+	term = (Term){ .c = { .attr = { .fg = defaultfg, .bg = defaultbg } } };
 	tresize(col, row);
 	term.numlock = 1;
 
@@ -1556,13 +1544,14 @@ tsetchar(char *c, Glyph *attr, int x, int y) {
 		}
 	}
 
-	/* remove the whole wide character */
 	if(term.line[y][x].mode & ATTR_WIDE) {
-		term.line[y][x + 1].c[0] = ' ';
-		term.line[y][x + 1].mode &= ~ATTR_WDUMMY;
+		if(x+1 < term.col) {
+			term.line[y][x+1].c[0] = ' ';
+			term.line[y][x+1].mode &= ~ATTR_WDUMMY;
+		}
 	} else if(term.line[y][x].mode & ATTR_WDUMMY) {
-		term.line[y][x - 1].c[0] = ' ';
-		term.line[y][x - 1].mode &= ~ATTR_WIDE;
+		term.line[y][x-1].c[0] = ' ';
+		term.line[y][x-1].mode &= ~ATTR_WIDE;
 	}
 
 	term.dirty[y] = 1;
@@ -2257,9 +2246,9 @@ tputc(char *c, int len) {
 	long u8char;
 	int width;
 
-	if(len == 1)
+	if(len == 1) {
 		width = 1;
-	else {
+	} else {
 		utf8decode(c, &u8char);
 		width = wcwidth(u8char);
 	}
@@ -2510,19 +2499,20 @@ tputc(char *c, int len) {
 			(term.col - term.c.x - 1) * sizeof(Glyph));
 	}
 
-	if(term.c.x + width > term.col)
+	if(term.c.x+width > term.col)
 		tnewline(1);
 
 	tsetchar(c, &term.c.attr, term.c.x, term.c.y);
 
 	if(width == 2) {
 		term.line[term.c.y][term.c.x].mode |= ATTR_WIDE;
-		term.line[term.c.y][term.c.x + 1].c[0] = '\0';
-		term.line[term.c.y][term.c.x + 1].mode = ATTR_WDUMMY;
+		if(term.c.x+1 < term.col) {
+			term.line[term.c.y][term.c.x+1].c[0] = '\0';
+			term.line[term.c.y][term.c.x+1].mode = ATTR_WDUMMY;
+		}
 	}
-
-	if(term.c.x + width < term.col) {
-		tmoveto(term.c.x + width, term.c.y);
+	if(term.c.x+width < term.col) {
+		tmoveto(term.c.x+width, term.c.y);
 	} else {
 		term.c.state |= CURSOR_WRAPNEXT;
 	}
@@ -2576,8 +2566,8 @@ tresize(int col, int row) {
 	/* allocate any new rows */
 	for(/* i == minrow */; i < row; i++) {
 		term.dirty[i] = 1;
-		term.line[i] = xcalloc(col, sizeof(Glyph));
-		term.alt [i] = xcalloc(col, sizeof(Glyph));
+		term.line[i] = xmalloc(col * sizeof(Glyph));
+		term.alt[i] = xmalloc(col * sizeof(Glyph));
 	}
 	if(col > term.col) {
 		bp = term.tabs + term.col;
@@ -3293,17 +3283,17 @@ xdrawcursor(void) {
 
 	curx = term.c.x;
 
-	/* if the cursor was/is on a dummy, adjust the coordinate */
+	/* adjust position if in dummy */
 	if(term.line[oldy][oldx].mode & ATTR_WDUMMY)
-		oldx --;
+		oldx--;
 	if(term.line[term.c.y][curx].mode & ATTR_WDUMMY)
-		curx --;
+		curx--;
 
-	memcpy(g.c, term.line[term.c.y][curx].c, UTF_SIZ);
+	memcpy(g.c, term.line[term.c.y][term.c.x].c, UTF_SIZ);
 
 	/* remove the old cursor */
 	sl = utf8size(term.line[oldy][oldx].c);
-	width = (term.line[oldy][oldx].mode & ATTR_WIDE)? 2: 1;
+	width = (term.line[oldy][oldx].mode & ATTR_WIDE)? 2 : 1;
 	xdraws(term.line[oldy][oldx].c, term.line[oldy][oldx], oldx,
 			oldy, width, sl);
 
@@ -3317,8 +3307,9 @@ xdrawcursor(void) {
 			}
 
 			sl = utf8size(g.c);
-			width = (term.line[term.c.y][curx].mode & ATTR_WIDE)? 2: 1;
-			xdraws(g.c, g, curx, term.c.y, width, sl);
+			width = (term.line[term.c.y][curx].mode & ATTR_WIDE)\
+				? 2 : 1;
+			xdraws(g.c, g, term.c.x, term.c.y, width, sl);
 		} else {
 			XftDrawRect(xw.draw, &dc.col[defaultcs],
 					borderpx + curx * xw.cw,
@@ -3421,7 +3412,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 			sl = utf8decode(new.c, &u8char);
 			memcpy(buf+ib, new.c, sl);
 			ib += sl;
-			ic += (new.mode & ATTR_WIDE)? 2: 1;
+			ic += (new.mode & ATTR_WIDE)? 2 : 1;
 		}
 		if(ib > 0)
 			xdraws(buf, base, ox, y, ic, ib);
