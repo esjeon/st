@@ -5,9 +5,9 @@
  *
  * font: see http://freedesktop.org/software/fontconfig/fontconfig-user.html
  */
-static char font[] = "Inconsolata:size=10:rgba=rgb";
+static char font[] = "Inconsolata:pixelsize=14:weight=105";
 static int borderpx = 3;
-static char shell[] = "/bin/sh";
+static char shell[] = "/usr/bin/tmux";
 
 /* Kerning / character bounding-box mutlipliers */
 float cwscale = 1.0;
@@ -42,7 +42,7 @@ static char termname[] = "st-256color";
 
 static unsigned int tabspaces = 8;
 
-/* ARGB opacity */
+/* background opacity */
 static const int alpha = 0xd0;
 
 /* Terminal colors (16 first used in escape sequence) */
@@ -132,13 +132,13 @@ static Shortcut shortcuts[] = {
  * * < 0: crlf mode is disabled
  *
  * Be careful with the order of the definitons because st searchs in
- * this table sequencially, so any XK_ANY_MOD must be in the last
+ * this table sequentially, so any XK_ANY_MOD must be in the last
  * position for a key.
  */
 
 /*
- * If you want something else but the function keys of X11 (0xFF00 - 0xFFFF)
- * mapped below, add them to this array.
+ * If you want keys other than the X11 function keys (0xFD00 - 0xFFFF)
+ * to be mapped below, add them to this array.
  */
 static KeySym mappedkeys[] = { -1 };
 
@@ -254,7 +254,7 @@ static Key key[] = {
 	{ XK_End,           XK_ANY_MOD,     "\033[4~",       0,    0,    0},
 	{ XK_Prior,         ControlMask,    "\033[5;5~",     0,    0,    0},
 	{ XK_Prior,         ShiftMask,      "\033[5;2~",     0,    0,    0},
-	{ XK_Prior,         XK_NO_MOD,      "\033[5~",       0,    0,    0},
+	{ XK_Prior,         XK_ANY_MOD,     "\033[5~",       0,    0,    0},
 	{ XK_Next,          ControlMask,    "\033[6;5~",     0,    0,    0},
 	{ XK_Next,          ShiftMask,      "\033[6;2~",     0,    0,    0},
 	{ XK_Next,          XK_ANY_MOD,     "\033[6~",       0,    0,    0},
