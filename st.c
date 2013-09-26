@@ -134,6 +134,7 @@ enum term_mode {
 	MODE_FOCUS       = 65536,
 	MODE_MOUSEX10    = 131072,
 	MODE_MOUSEMANY   = 262144,
+	MODE_BRCKTPASTE  = 524288,
 	MODE_MOUSE       = MODE_MOUSEBTN|MODE_MOUSEMOTION|MODE_MOUSEX10\
 	                  |MODE_MOUSEMANY,
 };
@@ -826,18 +827,23 @@ mousereport(XEvent *e) {
 		button = oldbutton + 32;
 		ox = x;
 		oy = y;
-	} else if(!IS_SET(MODE_MOUSESGR)
-			&& (e->xbutton.type == ButtonRelease
-				|| button == AnyButton)) {
-		button = 3;
 	} else {
-		button -= Button1;
-		if(button >= 3)
-			button += 64 - 3;
+		if(!IS_SET(MODE_MOUSESGR) && e->xbutton.type == ButtonRelease) {
+			button = 3;
+		} else {
+			button -= Button1;
+			if(button >= 3)
+				button += 64 - 3;
+		}
 		if(e->xbutton.type == ButtonPress) {
 			oldbutton = button;
 			ox = x;
 			oy = y;
+		} else if(e->xbutton.type == ButtonRelease) {
+			oldbutton = 3;
+			/* MODE_MOUSEX10: no button release reporting */
+			if(IS_SET(MODE_MOUSEX10))
+				return;
 		}
 	}
 
@@ -854,8 +860,7 @@ mousereport(XEvent *e) {
 				e->xbutton.type == ButtonRelease ? 'm' : 'M');
 	} else if(x < 223 && y < 223) {
 		len = snprintf(buf, sizeof(buf), "\033[M%c%c%c",
-				IS_SET(MODE_MOUSEX10)? button-1 : 32+button,
-				32+x+1, 32+y+1);
+				32+button, 32+x+1, 32+y+1);
 	} else {
 		return;
 	}
@@ -960,7 +965,7 @@ selcopy(void) {
 			 * st.
 			 * FIXME: Fix the computer world.
 			 */
-			if(y < sel.ne.y && !((gp-1)->mode & ATTR_WRAP))
+			if(y < sel.ne.y && x > 0 && !((gp-1)->mode & ATTR_WRAP))
 				*ptr++ = '\n';
 
 			/*
@@ -1012,7 +1017,11 @@ selnotify(XEvent *e) {
 			*repl++ = '\r';
 		}
 
+		if(IS_SET(MODE_BRCKTPASTE))
+			ttywrite("\033[200~", 6);
 		ttywrite((const char *)data, nitems * format / 8);
+		if(IS_SET(MODE_BRCKTPASTE))
+			ttywrite("\033[201~", 6);
 		XFree(data);
 		/* number of 32-bit chunks returned */
 		ofs += nitems * format / 32;
@@ -1867,6 +1876,9 @@ tsetmode(bool priv, bool set, int *args, int narg) {
 			case 1048:
 				tcursor((set) ? CURSOR_SAVE : CURSOR_LOAD);
 				break;
+			case 2004: /* 2004: bracketed paste mode */
+				MODBIT(term.mode, set, MODE_BRCKTPASTE);
+				break;
 			/* Not implemented mouse modes. See comments there. */
 			case 1001: /* mouse highlight mode; can hang the
 				      terminal by design when implemented. */
@@ -2323,6 +2335,8 @@ tputc(char *c, int len) {
 		case '\a':   /* BEL */
 			if(!(xw.state & WIN_FOCUSED))
 				xseturgency(1);
+			if (bellvolume)
+				XBell(xw.dpy, bellvolume);
 			return;
 		case '\033': /* ESC */
 			csireset();
