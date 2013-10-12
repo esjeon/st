@@ -5,7 +5,7 @@
  *
  * font: see http://freedesktop.org/software/fontconfig/fontconfig-user.html
  */
-static char font[] = "Inconsolata:pixelsize=14:weight=105";
+static char font[] = "Inconsolata:pixelsize=13:weight=101";
 static int borderpx = 3;
 static char shell[] = "/usr/bin/tmux";
 
