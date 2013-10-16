@@ -259,15 +259,15 @@ typedef struct {
 } XWindow;
 
 typedef struct {
-	int b;
+	uint b;
 	uint mask;
-	char s[ESC_BUF_SIZ];
+	char *s;
 } Mousekey;
 
 typedef struct {
 	KeySym k;
 	uint mask;
-	char s[ESC_BUF_SIZ];
+	char *s;
 	/* three valued logic variables: 0 indifferent, 1 on, -1 off */
 	signed char appkey;    /* application keypad */
 	signed char appcursor; /* application cursor */
@@ -389,6 +389,7 @@ static inline bool match(uint, uint);
 static void ttynew(void);
 static void ttyread(void);
 static void ttyresize(void);
+static void ttysend(char *, size_t);
 static void ttywrite(const char *, size_t);
 
 static void xdraws(char *, Glyph, int, int, int, int);
@@ -896,9 +897,7 @@ bpress(XEvent *e) {
 	for(mk = mshortcuts; mk < mshortcuts + LEN(mshortcuts); mk++) {
 		if(e->xbutton.button == mk->b
 				&& match(mk->mask, e->xbutton.state)) {
-			ttywrite(mk->s, strlen(mk->s));
-			if(IS_SET(MODE_ECHO))
-				techo(mk->s, strlen(mk->s));
+			ttysend(mk->s, strlen(mk->s));
 			return;
 		}
 	}
@@ -1034,7 +1033,7 @@ selnotify(XEvent *e) {
 
 		if(IS_SET(MODE_BRCKTPASTE))
 			ttywrite("\033[200~", 6);
-		ttywrite((const char *)data, nitems * format / 8);
+		ttysend((char *)data, nitems * format / 8);
 		if(IS_SET(MODE_BRCKTPASTE))
 			ttywrite("\033[201~", 6);
 		XFree(data);
@@ -1300,6 +1299,13 @@ void
 ttywrite(const char *s, size_t n) {
 	if(write(cmdfd, s, n) == -1)
 		die("write error on tty: %s\n", SERRNO);
+}
+
+void
+ttysend(char *s, size_t n) {
+	ttywrite(s, n);
+	if(IS_SET(MODE_ECHO))
+		techo(s, n);
 }
 
 void
@@ -3607,8 +3613,8 @@ void
 kpress(XEvent *ev) {
 	XKeyEvent *e = &ev->xkey;
 	KeySym ksym;
-	char xstr[31], buf[32], *customkey, *cp = buf;
-	int len, ret;
+	char buf[32], *customkey;
+	int len;
 	long c;
 	Status status;
 	Shortcut *bp;
@@ -3616,7 +3622,7 @@ kpress(XEvent *ev) {
 	if(IS_SET(MODE_KBDLOCK))
 		return;
 
-	len = XmbLookupString(xw.xic, e, xstr, sizeof(xstr), &ksym, &status);
+	len = XmbLookupString(xw.xic, e, buf, sizeof buf, &ksym, &status);
 	e->state &= ~Mod2Mask;
 	/* 1. shortcuts */
 	for(bp = shortcuts; bp < shortcuts + LEN(shortcuts); bp++) {
@@ -3628,33 +3634,26 @@ kpress(XEvent *ev) {
 
 	/* 2. custom keys from config.h */
 	if((customkey = kmap(ksym, e->state))) {
-		len = strlen(customkey);
-		memcpy(buf, customkey, len);
-	/* 3. hardcoded (overrides X lookup) */
-	} else {
-		if(len == 0)
-			return;
-
-		if(len == 1 && e->state & Mod1Mask) {
-			if(IS_SET(MODE_8BIT)) {
-				if(*xstr < 0177) {
-					c = *xstr | 0x80;
-					ret = utf8encode(&c, cp);
-					cp += ret;
-					len = 0;
-				}
-			} else {
-				*cp++ = '\033';
-			}
-		}
-
-		memcpy(cp, xstr, len);
-		len = cp - buf + len;
+		ttysend(customkey, strlen(customkey));
+		return;
 	}
 
-	ttywrite(buf, len);
-	if(IS_SET(MODE_ECHO))
-		techo(buf, len);
+	/* 3. composed string from input method */
+	if(len == 0)
+		return;
+	if(len == 1 && e->state & Mod1Mask) {
+		if(IS_SET(MODE_8BIT)) {
+			if(*buf < 0177) {
+				c = *buf | 0x80;
+				len = utf8encode(&c, buf);
+			}
+		} else {
+			buf[1] = buf[0];
+			buf[0] = '\033';
+			len = 2;
+		}
+	}
+	ttysend(buf, len);
 }
 
 
