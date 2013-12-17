@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <stdint.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
@@ -182,8 +183,8 @@ typedef unsigned short ushort;
 typedef struct {
 	char c[UTF_SIZ]; /* character code */
 	ushort mode;      /* attribute flags */
-	ulong fg;        /* foreground  */
-	ulong bg;        /* background  */
+	uint32_t fg;      /* foreground  */
+	uint32_t bg;      /* background  */
 } Glyph;
 
 typedef Glyph *Line;
@@ -241,7 +242,7 @@ typedef struct {
 	Colourmap cmap;
 	Window win;
 	Drawable buf;
-	Atom xembed, wmdeletewin;
+	Atom xembed, wmdeletewin, netwmname, netwmpid;
 	XIM xim;
 	XIC xic;
 	Draw draw;
@@ -382,7 +383,7 @@ static void tsetdirtattr(int);
 static void tsetmode(bool, bool, int *, int);
 static void tfulldirt(void);
 static void techo(char *, int);
-static long tdefcolor(int *, int *, int);
+static int32_t tdefcolor(int *, int *, int);
 static void tselcs(void);
 static void tdeftran(char);
 static inline bool match(uint, uint);
@@ -1669,9 +1670,9 @@ tdeleteline(int n) {
 	tscrollup(term.c.y, n);
 }
 
-long
+int32_t
 tdefcolor(int *attr, int *npar, int l) {
-	long idx = -1;
+	int32_t idx = -1;
 	uint r, g, b;
 
 	switch (attr[*npar + 1]) {
@@ -1720,7 +1721,7 @@ tdefcolor(int *attr, int *npar, int l) {
 void
 tsetattr(int *attr, int l) {
 	int i;
-	long idx;
+	int32_t idx;
 
 	for(i = 0; i < l; i++) {
 		switch(attr[i]) {
@@ -2941,6 +2942,7 @@ xinit(void) {
 	Cursor cursor;
 	Window parent;
 	int sw, sh;
+	pid_t thispid = getpid();
 
 	if(!(xw.dpy = XOpenDisplay(NULL)))
 		die("Can't open display\n");
@@ -3067,7 +3069,12 @@ xinit(void) {
 
 	xw.xembed = XInternAtom(xw.dpy, "_XEMBED", False);
 	xw.wmdeletewin = XInternAtom(xw.dpy, "WM_DELETE_WINDOW", False);
+	xw.netwmname = XInternAtom(xw.dpy, "_NET_WM_NAME", False);
 	XSetWMProtocols(xw.dpy, xw.win, &xw.wmdeletewin, 1);
+
+	xw.netwmpid = XInternAtom(xw.dpy, "_NET_WM_PID", False);
+	XChangeProperty(xw.dpy, xw.win, xw.netwmpid, XA_CARDINAL, 32,
+			PropModeReplace, (unsigned char *)&thispid, 1);
 
 	xresettitle();
 	XMapWindow(xw.dpy, xw.win);
@@ -3399,6 +3406,7 @@ xsettitle(char *p) {
 	Xutf8TextListToTextProperty(xw.dpy, &p, 1, XUTF8StringStyle,
 			&prop);
 	XSetWMName(xw.dpy, xw.win, &prop);
+	XSetTextProperty(xw.dpy, xw.win, &prop, xw.netwmname);
 	XFree(prop.value);
 }
 
