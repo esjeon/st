@@ -136,6 +136,7 @@ enum term_mode {
 	MODE_MOUSEX10    = 131072,
 	MODE_MOUSEMANY   = 262144,
 	MODE_BRCKTPASTE  = 524288,
+	MODE_PRINT       = 1048576,
 	MODE_MOUSE       = MODE_MOUSEBTN|MODE_MOUSEMOTION|MODE_MOUSEX10\
 	                  |MODE_MOUSEMANY,
 };
@@ -316,6 +317,9 @@ static void clippaste(const Arg *);
 static void numlock(const Arg *);
 static void selpaste(const Arg *);
 static void xzoom(const Arg *);
+static void printsel(const Arg *);
+static void printscreen(const Arg *) ;
+static void toggleprinter(const Arg *);
 
 /* Config.h for applying patches and the configuration. */
 #include "config.h"
@@ -358,6 +362,10 @@ static void strparse(void);
 static void strreset(void);
 
 static int tattrset(int);
+static void tprinter(char *s, size_t len);
+static void tdumpsel(void);
+static void tdumpline(int);
+static void tdump(void);
 static void tclearregion(int, int, int, int);
 static void tcursor(int);
 static void tdeletechar(int);
@@ -432,6 +440,7 @@ static void selrequest(XEvent *);
 static void selinit(void);
 static void selsort(void);
 static inline bool selected(int, int);
+static char *getsel(void);
 static void selcopy(void);
 static void selscroll(int, int);
 static void selsnap(int, int *, int *, int);
@@ -444,6 +453,7 @@ static int isfullutf8(char *, int);
 static ssize_t xwrite(int, char *, size_t);
 static void *xmalloc(size_t);
 static void *xrealloc(void *, size_t);
+static char *xstrdup(char *s);
 
 static void (*handler[LASTEvent])(XEvent *) = {
 	[KeyPress] = kpress,
@@ -471,7 +481,7 @@ static STREscape strescseq;
 static int cmdfd;
 static pid_t pid;
 static Selection sel;
-static int iofd = -1;
+static int iofd = STDOUT_FILENO;
 static char **opt_cmd = NULL;
 static char *opt_io = NULL;
 static char *opt_title = NULL;
@@ -527,6 +537,16 @@ xmalloc(size_t len) {
 void *
 xrealloc(void *p, size_t len) {
 	if((p = realloc(p, len)) == NULL)
+		die("Out of memory\n");
+
+	return p;
+}
+
+char *
+xstrdup(char *s) {
+	char *p = strdup(s);
+
+	if (!p)
 		die("Out of memory\n");
 
 	return p;
@@ -941,8 +961,8 @@ bpress(XEvent *e) {
 	}
 }
 
-void
-selcopy(void) {
+char *
+getsel(void) {
 	char *str, *ptr;
 	int x, y, bufsize, size, i, ex;
 	Glyph *gp, *last;
@@ -956,11 +976,12 @@ selcopy(void) {
 		/* append every set & selected glyph to the selection */
 		for(y = sel.nb.y; y < sel.ne.y + 1; y++) {
 			gp = &term.line[y][0];
-			last = gp + term.col;
+			last = &gp[term.col-1];
 
-			while(--last >= gp && !(selected(last - gp, y) && \
-						strcmp(last->c, " ") != 0))
-				/* nothing */;
+			while(last >= gp && !(selected(last - gp, y) &&
+			                      strcmp(last->c, " ") != 0)) {
+				--last;
+			}
 
 			for(x = 0; gp <= last; x++, ++gp) {
 				if(!selected(x, y) || (gp->mode & ATTR_WDUMMY))
@@ -1000,7 +1021,12 @@ selcopy(void) {
 		}
 		*ptr = 0;
 	}
-	xsetsel(str);
+	return str;
+}
+
+void
+selcopy(void) {
+	xsetsel(getsel());
 }
 
 void
@@ -1247,6 +1273,7 @@ ttynew(void) {
 		cmdfd = m;
 		signal(SIGCHLD, sigchld);
 		if(opt_io) {
+			term.mode |= MODE_PRINT;
 			iofd = (!strcmp(opt_io, "-")) ?
 				  STDOUT_FILENO :
 				  open(opt_io, O_WRONLY | O_CREAT, 0666);
@@ -1970,6 +1997,25 @@ csihandle(void) {
 		DEFAULT(csiescseq.arg[0], 1);
 		tmoveto(term.c.x, term.c.y+csiescseq.arg[0]);
 		break;
+	case 'i': /* MC -- Media Copy */
+		switch(csiescseq.arg[0]) {
+		case 0:
+			tdump();
+			break;
+		case 1:
+			tdumpline(term.c.y);
+			break;
+		case 2:
+			tdumpsel();
+			break;
+		case 4:
+			term.mode &= ~MODE_PRINT;
+			break;
+		case 5:
+			term.mode |= MODE_PRINT;
+			break;
+		}
+		break;
 	case 'c': /* DA -- Device Attributes */
 		if(csiescseq.arg[0] == 0)
 			ttywrite(VT102ID, sizeof(VT102ID) - 1);
@@ -2155,20 +2201,21 @@ csireset(void) {
 void
 strhandle(void) {
 	char *p = NULL;
-	int i, j, narg;
+	int j, narg, par;
 
 	strparse();
 	narg = strescseq.narg;
+	par = atoi(strescseq.args[0]);
 
 	switch(strescseq.type) {
 	case ']': /* OSC -- Operating System Command */
-		switch(i = atoi(strescseq.args[0])) {
+		switch(par) {
 		case 0:
 		case 1:
 		case 2:
 			if(narg > 1)
 				xsettitle(strescseq.args[1]);
-			break;
+			return;
 		case 4: /* color set */
 			if(narg < 3)
 				break;
@@ -2185,25 +2232,20 @@ strhandle(void) {
 				 */
 				redraw(0);
 			}
-			break;
-		default:
-			fprintf(stderr, "erresc: unknown str ");
-			strdump();
-			break;
+			return;
 		}
 		break;
 	case 'k': /* old title set compatibility */
 		xsettitle(strescseq.args[0]);
-		break;
+		return;
 	case 'P': /* DSC -- Device Control String */
 	case '_': /* APC -- Application Program Command */
 	case '^': /* PM -- Privacy Message */
-	default:
-		fprintf(stderr, "erresc: unknown str ");
-		strdump();
-		/* die(""); */
-		break;
+		return;
 	}
+
+	fprintf(stderr, "erresc: unknown str ");
+	strdump();
 }
 
 void
@@ -2244,6 +2286,64 @@ strdump(void) {
 void
 strreset(void) {
 	memset(&strescseq, 0, sizeof(strescseq));
+}
+
+void
+tprinter(char *s, size_t len) {
+	if(iofd != -1 && xwrite(iofd, s, len) < 0) {
+		fprintf(stderr, "Error writing in %s:%s\n",
+			opt_io, strerror(errno));
+		close(iofd);
+		iofd = -1;
+	}
+}
+
+void
+toggleprinter(const Arg *arg) {
+	term.mode ^= MODE_PRINT;
+}
+
+void
+printscreen(const Arg *arg) {
+	tdump();
+}
+
+void
+printsel(const Arg *arg) {
+	tdumpsel();
+}
+
+void
+tdumpsel(void)
+{
+	char *ptr;
+
+	ptr = getsel();
+	tprinter(ptr, strlen(ptr));
+	free(ptr);
+}
+
+void
+tdumpline(int n) {
+	Glyph *bp, *end;
+
+	bp = &term.line[n][0];
+	end = &bp[term.col-1];
+	while(end > bp && !strcmp(" ", end->c))
+		--end;
+	if(bp != end || strcmp(bp->c, " ")) {
+		for( ;bp <= end; ++bp)
+			tprinter(bp->c, strlen(bp->c));
+	}
+	tprinter("\n", 1);
+}
+
+void
+tdump(void) {
+	int i;
+
+	for(i = 0; i < term.row; ++i)
+		tdumpline(i);
 }
 
 void
@@ -2327,14 +2427,8 @@ tputc(char *c, int len) {
 		width = wcwidth(u8char);
 	}
 
-	if(iofd != -1) {
-		if(xwrite(iofd, c, len) < 0) {
-			fprintf(stderr, "Error writing in %s:%s\n",
-				opt_io, strerror(errno));
-			close(iofd);
-			iofd = -1;
-		}
-	}
+	if(IS_SET(MODE_PRINT))
+		tprinter(c, len);
 
 	/*
 	 * STR sequences must be checked before anything else
@@ -2802,7 +2896,8 @@ xhints(void) {
 		sizeh->min_height = sizeh->max_height = xw.fh;
 	}
 
-	XSetWMProperties(xw.dpy, xw.win, NULL, NULL, NULL, 0, sizeh, &wm, &class);
+	XSetWMProperties(xw.dpy, xw.win, NULL, NULL, NULL, 0, sizeh, &wm,
+			&class);
 	XFree(sizeh);
 }
 
@@ -3126,6 +3221,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 		if(base.fg == defaultfg)
 			base.fg = defaultunderline;
 	}
+
 	if(IS_TRUECOL(base.fg)) {
 		colfg.alpha = 0xffff;
 		colfg.red = TRUERED(base.fg);
@@ -3147,8 +3243,6 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 	} else {
 		bg = &dc.col[base.bg];
 	}
-
-
 
 	if(base.mode & ATTR_BOLD) {
 		if(BETWEEN(base.fg, 0, 7)) {
@@ -3179,7 +3273,8 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			colfg.green = ~fg->color.green;
 			colfg.blue = ~fg->color.blue;
 			colfg.alpha = fg->color.alpha;
-			XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &colfg, &revfg);
+			XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &colfg,
+					&revfg);
 			fg = &revfg;
 		}
 
@@ -3190,7 +3285,8 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			colbg.green = ~bg->color.green;
 			colbg.blue = ~bg->color.blue;
 			colbg.alpha = bg->color.alpha;
-			XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &colbg, &revbg);
+			XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &colbg,
+					&revbg);
 			bg = &revbg;
 		}
 	}
@@ -3270,7 +3366,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			u8fblen += u8cblen;
 		}
 		if(doesexist) {
-			if (oneatatime)
+			if(oneatatime)
 				continue;
 			break;
 		}
@@ -3293,6 +3389,8 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 			 * Nothing was found in the cache. Now use
 			 * some dozen of Fontconfig calls to get the
 			 * font for one single character.
+			 *
+			 * Xft and fontconfig are design failures.
 			 */
 			fcpattern = FcPatternDuplicate(font->pattern);
 			fccharset = FcCharSetCreate();
@@ -3336,6 +3434,12 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 		xp += xw.cw * wcwidth(u8char);
 	}
 
+	/*
+	 * This is how the loop above actually should be. Why does the
+	 * application have to care about font details?
+	 *
+	 * I have to repeat: Xft and Fontconfig are design failures.
+	 */
 	/*
 	XftDrawStringUtf8(xw.draw, fg, font->set, winx,
 			winy + font->ascent, (FcChar8 *)s, bytelen);
@@ -3836,7 +3940,7 @@ main(int argc, char *argv[]) {
 		if(argc > 1) {
 			opt_cmd = &argv[1];
 			if(argv[1] != NULL && opt_title == NULL) {
-				titles = strdup(argv[1]);
+				titles = xstrdup(argv[1]);
 				opt_title = basename(titles);
 			}
 		}

@@ -110,6 +110,9 @@ static Mousekey mshortcuts[] = {
 
 static Shortcut shortcuts[] = {
 	/* mask                 keysym          function        argument */
+	{ ControlMask,          XK_Print,       toggleprinter,  {.i =  0} },
+	{ ShiftMask,            XK_Print,       printscreen,    {.i =  0} },
+	{ XK_ANY_MOD,           XK_Print,       printsel,       {.i =  0} },
 	{ MODKEY|ShiftMask,     XK_Prior,       xzoom,          {.i = +1} },
 	{ MODKEY|ShiftMask,     XK_Next,        xzoom,          {.i = -1} },
 	{ ShiftMask,            XK_Insert,      selpaste,       {.i =  0} },
@@ -156,7 +159,8 @@ static uint ignoremod = Mod2Mask|XK_SWITCH_MOD;
 
 static Key key[] = {
 	/* keysym           mask            string      appkey appcursor crlf */
-	{ XK_KP_Home,       ShiftMask,      "\033[1;2H",     0,    0,    0},
+	{ XK_KP_Home,       ShiftMask,      "\033[2J",       0,   -1,    0},
+	{ XK_KP_Home,       ShiftMask,      "\033[1;2H",     0,   +1,    0},
 	{ XK_KP_Home,       XK_ANY_MOD,     "\033[H",        0,   -1,    0},
 	{ XK_KP_Home,       XK_ANY_MOD,     "\033[1~",       0,   +1,    0},
 	{ XK_KP_Up,         XK_ANY_MOD,     "\033Ox",       +1,    0,    0},
@@ -187,10 +191,10 @@ static Key key[] = {
 	{ XK_KP_Insert,     ControlMask,    "\033[2;5~",    +1,    0,    0},
 	{ XK_KP_Insert,     XK_ANY_MOD,     "\033[4h",      -1,    0,    0},
 	{ XK_KP_Insert,     XK_ANY_MOD,     "\033[2~",      +1,    0,    0},
-	{ XK_KP_Delete,     ControlMask,    "\033[2J",      -1,    0,    0},
+	{ XK_KP_Delete,     ControlMask,    "\033[M",       -1,    0,    0},
 	{ XK_KP_Delete,     ControlMask,    "\033[3;5~",    +1,    0,    0},
-	{ XK_KP_Delete,     ShiftMask,      "\033[2K",      +1,    0,    0},
-	{ XK_KP_Delete,     ShiftMask,      "\033[3;2~",    -1,    0,    0},
+	{ XK_KP_Delete,     ShiftMask,      "\033[2K",      -1,    0,    0},
+	{ XK_KP_Delete,     ShiftMask,      "\033[3;2~",    +1,    0,    0},
 	{ XK_KP_Delete,     XK_ANY_MOD,     "\033[P",       -1,    0,    0},
 	{ XK_KP_Delete,     XK_ANY_MOD,     "\033[3~",      +1,    0,    0},
 	{ XK_KP_Multiply,   XK_ANY_MOD,     "\033Oj",       +2,    0,    0},
@@ -243,13 +247,14 @@ static Key key[] = {
 	{ XK_Insert,        ControlMask,    "\033[2;5~",    +1,    0,    0},
 	{ XK_Insert,        XK_ANY_MOD,     "\033[4h",      -1,    0,    0},
 	{ XK_Insert,        XK_ANY_MOD,     "\033[2~",      +1,    0,    0},
-	{ XK_Delete,        ControlMask,    "\033[2J",      -1,    0,    0},
+	{ XK_Delete,        ControlMask,    "\033[M",       -1,    0,    0},
 	{ XK_Delete,        ControlMask,    "\033[3;5~",    +1,    0,    0},
-	{ XK_Delete,        ShiftMask,      "\033[2K",      +1,    0,    0},
-	{ XK_Delete,        ShiftMask,      "\033[3;2~",    -1,    0,    0},
+	{ XK_Delete,        ShiftMask,      "\033[2K",      -1,    0,    0},
+	{ XK_Delete,        ShiftMask,      "\033[3;2~",    +1,    0,    0},
 	{ XK_Delete,        XK_ANY_MOD,     "\033[P",       -1,    0,    0},
 	{ XK_Delete,        XK_ANY_MOD,     "\033[3~",      +1,    0,    0},
-	{ XK_Home,          ShiftMask,      "\033[1;2H",     0,    0,    0},
+	{ XK_Home,          ShiftMask,      "\033[2J",       0,   -1,    0},
+	{ XK_Home,          ShiftMask,      "\033[1;2H",     0,   +1,    0},
 	{ XK_Home,          XK_ANY_MOD,     "\033[H",        0,   -1,    0},
 	{ XK_Home,          XK_ANY_MOD,     "\033[1~",       0,   +1,    0},
 	{ XK_End,           ControlMask,    "\033[J",       -1,    0,    0},
