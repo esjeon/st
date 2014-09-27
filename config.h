@@ -8,6 +8,10 @@
 static char font[] = "Inconsolata:size=7.15";
 static int borderpx = 3;
 static char shell[] = "/usr/bin/tmux";
+static char *utmp = NULL;
+
+/* identification sequence returned in DA and DECID */
+static char vtiden[] = "\033[?6c";
 
 /* Kerning / character bounding-box mutlipliers */
 float cwscale = 1.0;
@@ -140,7 +144,7 @@ static Shortcut shortcuts[] = {
  * * > 0: crlf mode is enabled
  * * < 0: crlf mode is disabled
  *
- * Be careful with the order of the definitons because st searchs in
+ * Be careful with the order of the definitions because st searches in
  * this table sequentially, so any XK_ANY_MOD must be in the last
  * position for a key.
  */
@@ -200,7 +204,8 @@ static Key key[] = {
 	{ XK_KP_Delete,     ControlMask,    "\033[3;5~",    +1,    0,    0},
 	{ XK_KP_Delete,     ShiftMask,      "\033[2K",      -1,    0,    0},
 	{ XK_KP_Delete,     ShiftMask,      "\033[3;2~",    +1,    0,    0},
-	{ XK_KP_Delete,     XK_ANY_MOD,     "\033[3~",      +1,    0,    0},
+	{ XK_KP_Delete,     XK_ANY_MOD,     "\033[P",       -1,    0,    0},
+	{ XK_KP_Delete,     XK_ANY_MOD,     "\177",         +1,    0,    0},
 	{ XK_KP_Multiply,   XK_ANY_MOD,     "\033Oj",       +2,    0,    0},
 	{ XK_KP_Add,        XK_ANY_MOD,     "\033Ok",       +2,    0,    0},
 	{ XK_KP_Enter,      XK_ANY_MOD,     "\033OM",       +2,    0,    0},
@@ -254,7 +259,8 @@ static Key key[] = {
 	{ XK_Delete,        ControlMask,    "\033[3;5~",    +1,    0,    0},
 	{ XK_Delete,        ShiftMask,      "\033[2K",      -1,    0,    0},
 	{ XK_Delete,        ShiftMask,      "\033[3;2~",    +1,    0,    0},
-	{ XK_Delete,        XK_ANY_MOD,     "\033[3~",      +1,    0,    0},
+	{ XK_Delete,        XK_ANY_MOD,     "\033[P",       -1,    0,    0},
+	{ XK_Delete,        XK_ANY_MOD,     "\177",         +1,    0,    0},
 	{ XK_Home,          ShiftMask,      "\033[2J",       0,   -1,    0},
 	{ XK_Home,          ShiftMask,      "\033[1;2H",     0,   +1,    0},
 	{ XK_Home,          XK_ANY_MOD,     "\033[H",        0,   -1,    0},
@@ -363,7 +369,7 @@ static Key key[] = {
  * Use the same masks as usual.
  * Button1Mask is always unset, to make masks match between ButtonPress.
  * ButtonRelease and MotionNotify.
- * ButtonRelease and MotionNotify.
+ * If no match is found, regular selection is used.
  */
 static uint selmasks[] = {
 	[SEL_RECTANGULAR] = Mod1Mask,
