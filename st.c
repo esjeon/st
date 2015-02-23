@@ -27,6 +27,7 @@
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
 #include <X11/Xft/Xft.h>
+#include <X11/XKBlib.h>
 #include <fontconfig/fontconfig.h>
 #include <wchar.h>
 
@@ -62,8 +63,6 @@ char *argv0;
 #define XK_NO_MOD     0
 #define XK_SWITCH_MOD (1<<13)
 #define OPAQUE 0Xff
-
-#define REDRAW_TIMEOUT (80*1000) /* 80 ms */
 
 /* macros */
 #define MIN(a, b)  ((a) < (b) ? (a) : (b))
@@ -320,6 +319,8 @@ static void clippaste(const Arg *);
 static void numlock(const Arg *);
 static void selpaste(const Arg *);
 static void xzoom(const Arg *);
+static void xzoomabs(const Arg *);
+static void xzoomreset(const Arg *);
 static void printsel(const Arg *);
 static void printscreen(const Arg *) ;
 static void toggleprinter(const Arg *);
@@ -349,7 +350,7 @@ typedef struct {
 
 static void die(const char *, ...);
 static void draw(void);
-static void redraw(int);
+static void redraw(void);
 static void drawregion(int, int, int, int);
 static void execsh(void);
 static void sigchld(int);
@@ -506,6 +507,7 @@ static int oldbutton = 3; /* button event on startup: 3 = release */
 
 static char *usedfont = NULL;
 static double usedfontsize = 0;
+static double defaultfontsize = 0;
 
 static uchar utfbyte[UTF_SIZ + 1] = {0x80,    0, 0xC0, 0xE0, 0xF0};
 static uchar utfmask[UTF_SIZ + 1] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
@@ -946,6 +948,8 @@ getsel(void) {
 			lastx = (sel.ne.y == y) ? sel.ne.x : term.col-1;
 		}
 		last = &term.line[y][MIN(lastx, linelen-1)];
+		while(last >= gp && last->c[0] == ' ')
+			--last;
 
 		for( ; gp <= last; ++gp) {
 			if(gp->mode & ATTR_WDUMMY)
@@ -1145,7 +1149,7 @@ die(const char *errstr, ...) {
 
 void
 execsh(void) {
-	char **args, *sh;
+	char **args, *sh, *prog;
 	const struct passwd *pw;
 	char buf[sizeof(long) * 8 + 1];
 
@@ -1157,13 +1161,18 @@ execsh(void) {
 			die("who are you?\n");
 	}
 
-	if (utmp)
-		sh = utmp;
-	else if (pw->pw_shell[0])
-		sh = pw->pw_shell;
+	if (!(sh = getenv("SHELL"))) {
+		sh = (pw->pw_shell[0]) ? pw->pw_shell : shell;
+	}
+
+	if(opt_cmd)
+		prog = opt_cmd[0];
+	else if(utmp)
+		prog = utmp;
 	else
-		sh = shell;
-	args = (opt_cmd) ? opt_cmd : (char *[]){sh, NULL};
+		prog = sh;
+	args = (opt_cmd) ? opt_cmd : (char *[]) {prog, NULL};
+
 	snprintf(buf, sizeof(buf), "%lu", xw.win);
 
 	unsetenv("COLUMNS");
@@ -1171,7 +1180,7 @@ execsh(void) {
 	unsetenv("TERMCAP");
 	setenv("LOGNAME", pw->pw_name, 1);
 	setenv("USER", pw->pw_name, 1);
-	setenv("SHELL", args[0], 1);
+	setenv("SHELL", sh, 1);
 	setenv("HOME", pw->pw_dir, 1);
 	setenv("TERM", termname, 1);
 	setenv("WINDOWID", buf, 1);
@@ -1183,8 +1192,8 @@ execsh(void) {
 	signal(SIGTERM, SIG_DFL);
 	signal(SIGALRM, SIG_DFL);
 
-	execvp(args[0], args);
-	exit(EXIT_FAILURE);
+	execvp(prog, args);
+	_exit(EXIT_FAILURE);
 }
 
 void
@@ -1818,7 +1827,7 @@ tsetmode(bool priv, bool set, int *args, int narg) {
 				mode = term.mode;
 				MODBIT(term.mode, set, MODE_REVERSE);
 				if(mode != term.mode)
-					redraw(REDRAW_TIMEOUT);
+					redraw();
 				break;
 			case 6: /* DECOM -- Origin */
 				MODBIT(term.c.state, set, CURSOR_ORIGIN);
@@ -2192,7 +2201,7 @@ strhandle(void) {
 				 * TODO if defaultbg color is changed, borders
 				 * are dirty
 				 */
-				redraw(0);
+				redraw();
 			}
 			return;
 		}
@@ -2423,7 +2432,7 @@ tcontrolcode(uchar ascii) {
 			if(!(xw.state & WIN_FOCUSED))
 				xseturgency(1);
 			if (bellvolume)
-				XBell(xw.dpy, bellvolume);
+				XkbBell(xw.dpy, xw.win, bellvolume, (Atom)NULL);
 		}
 		break;
 	case '\033': /* ESC */
@@ -2431,11 +2440,9 @@ tcontrolcode(uchar ascii) {
 		term.esc &= ~(ESC_CSI|ESC_ALTCHARSET|ESC_TEST);
 		term.esc |= ESC_START;
 		return;
-	case '\016': /* SO */
-		term.charset = 0;
-		return;
-	case '\017': /* SI */
-		term.charset = 1;
+	case '\016': /* SO (LS1 -- Locking shift 1) */
+	case '\017': /* SI (LS0 -- Locking shift 0) */
+		term.charset = 1 - (ascii - '\016');
 		return;
 	case '\032': /* SUB */
 		tsetchar(question, &term.c.attr, term.c.x, term.c.y);
@@ -2499,6 +2506,10 @@ eschandle(uchar ascii) {
 	case 'k': /* old title set compatibility */
 		tstrsequence(ascii);
 		return 0;
+	case 'n': /* LS2 -- Locking shift 2 */
+	case 'o': /* LS3 -- Locking shift 3 */
+		term.charset = 2 + (ascii - 'n');
+		break;
 	case '(': /* GZD4 -- set primary charset G0 */
 	case ')': /* G1D4 -- set secondary charset G1 */
 	case '*': /* G2D4 -- set tertiary charset G2 */
@@ -2571,7 +2582,10 @@ tputc(char *c, int len) {
 		unicodep = ascii = *c;
 	} else {
 		utf8decode(c, &unicodep, UTF_SIZ);
-		width = wcwidth(unicodep);
+		if ((width = wcwidth(unicodep)) == -1) {
+			c = "\357\277\275";	/* UTF_INVALID */
+			width = 1;
+		}
 		control = ISCONTROLC1(unicodep);
 		ascii = unicodep;
 	}
@@ -2660,13 +2674,16 @@ tputc(char *c, int len) {
 	if(IS_SET(MODE_WRAP) && (term.c.state & CURSOR_WRAPNEXT)) {
 		gp->mode |= ATTR_WRAP;
 		tnewline(1);
+		gp = &term.line[term.c.y][term.c.x];
 	}
 
-	if(IS_SET(MODE_INSERT) && term.c.x+1 < term.col)
-		memmove(gp+1, gp, (term.col - term.c.x - 1) * sizeof(Glyph));
+	if(IS_SET(MODE_INSERT) && term.c.x+width < term.col)
+		memmove(gp+width, gp, (term.col - term.c.x - width) * sizeof(Glyph));
 
-	if(term.c.x+width > term.col)
+	if(term.c.x+width > term.col) {
 		tnewline(1);
+		gp = &term.line[term.c.y][term.c.x];
+	}
 
 	tsetchar(c, &term.c.attr, term.c.x, term.c.y);
 
@@ -2982,7 +2999,7 @@ xloadfonts(char *fontstr, double fontsize) {
 	if(!pattern)
 		die("st: can't open font %s\n", fontstr);
 
-	if(fontsize > 0) {
+	if(fontsize > 1) {
 		FcPatternDel(pattern, FC_PIXEL_SIZE);
 		FcPatternDel(pattern, FC_SIZE);
 		FcPatternAddDouble(pattern, FC_PIXEL_SIZE, (double)fontsize);
@@ -3002,6 +3019,7 @@ xloadfonts(char *fontstr, double fontsize) {
 			FcPatternAddDouble(pattern, FC_PIXEL_SIZE, 12);
 			usedfontsize = 12;
 		}
+		defaultfontsize = usedfontsize;
 	}
 
 	FcConfigSubstitute(0, pattern, FcMatchPattern);
@@ -3014,6 +3032,8 @@ xloadfonts(char *fontstr, double fontsize) {
 		FcPatternGetDouble(dc.font.match->pattern,
 		                   FC_PIXEL_SIZE, 0, &fontval);
 		usedfontsize = fontval;
+		if(fontsize == 0)
+			defaultfontsize = fontval;
 	}
 
 	/* Setting character width and height. */
@@ -3069,11 +3089,29 @@ xunloadfonts(void) {
 
 void
 xzoom(const Arg *arg) {
+	Arg larg;
+
+	larg.i = usedfontsize + arg->i;
+	xzoomabs(&larg);
+}
+
+void
+xzoomabs(const Arg *arg) {
 	xunloadfonts();
-	xloadfonts(usedfont, usedfontsize + arg->i);
+	xloadfonts(usedfont, arg->i);
 	cresize(0, 0);
-	redraw(0);
+	redraw();
 	xhints();
+}
+
+void
+xzoomreset(const Arg *arg) {
+	Arg larg;
+
+	if(defaultfontsize > 0) {
+		larg.i = defaultfontsize;
+		xzoomabs(&larg);
+	}
 }
 
 void
@@ -3150,8 +3188,8 @@ xinit(void) {
 		| ButtonMotionMask | ButtonPressMask | ButtonReleaseMask;
 	xw.attrs.colormap = xw.cmap;
 
-	parent = opt_embed ? strtol(opt_embed, NULL, 0) : \
-			XRootWindow(xw.dpy, xw.scr);
+	if (!(opt_embed && (parent = strtol(opt_embed, NULL, 0))))
+		parent = XRootWindow(xw.dpy, xw.scr);
 	xw.win = XCreateWindow(xw.dpy, parent, xw.l, xw.t,
 			xw.w, xw.h, 0, xw.depth, InputOutput,
 			xw.vis, CWBackPixel | CWBorderPixel | CWBitGravity
@@ -3562,16 +3600,9 @@ xresettitle(void) {
 }
 
 void
-redraw(int timeout) {
-	struct timespec tv = {0, timeout * 1000};
-
+redraw(void) {
 	tfulldirt();
 	draw();
-
-	if(timeout > 0) {
-		nanosleep(&tv, NULL);
-		XSync(xw.dpy, False); /* necessary for a good tput flash */
-	}
 }
 
 void
@@ -3638,7 +3669,7 @@ expose(XEvent *ev) {
 		if(!e->count)
 			xw.state &= ~WIN_REDRAW;
 	}
-	redraw(0);
+	redraw();
 }
 
 void
@@ -3929,6 +3960,9 @@ run(void) {
 							TIMEDIFF(now,
 								lastblink)));
 					}
+					drawtimeout.tv_sec = \
+					    drawtimeout.tv_nsec / 1E9;
+					drawtimeout.tv_nsec %= (long)1E9;
 				} else {
 					tv = NULL;
 				}
@@ -3939,7 +3973,7 @@ run(void) {
 
 void
 usage(void) {
-	die("%s " VERSION " (c) 2010-2014 st engineers\n" \
+	die("%s " VERSION " (c) 2010-2015 st engineers\n" \
 	"usage: st [-a] [-v] [-c class] [-f font] [-g geometry] [-o file]\n"
 	"          [-i] [-t title] [-w windowid] [-e command ...]\n", argv0);
 }

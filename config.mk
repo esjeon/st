@@ -24,5 +24,5 @@ CFLAGS += -g -std=c99 -pedantic -Wall -Wvariadic-macros -O3 ${INCS} ${CPPFLAGS}
 LDFLAGS += -g ${LIBS}
 
 # compiler and linker
-CC ?= cc
+# CC = cc
 
