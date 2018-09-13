@@ -20,6 +20,9 @@ static char shell[] = "/bin/sh";
 static char *utmp = NULL;
 static char stty_args[] = "stty raw pass8 nl -echo -iexten -cstopb 38400";
 
+/* right-to-click to plumb */
+static char *plumber = "plumb.sh";
+
 /* identification sequence returned in DA and DECID */
 static char vtiden[] = "\033[?6c";
 
