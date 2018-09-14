@@ -226,8 +226,7 @@ static STREscape strescseq;
 static int iofd = 1;
 static int cmdfd;
 static pid_t pid;
-char *cwd = NULL;
-char *plumber_cmd = plumber;
+char *cwd = ".";
 
 static uchar utfbyte[UTF_SIZ + 1] = {0x80,    0, 0xC0, 0xE0, 0xF0};
 static uchar utfmask[UTF_SIZ + 1] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
@@ -1856,15 +1855,19 @@ strhandle(void)
 	switch (strescseq.type) {
 	case ']': /* OSC -- Operating System Command */
 		switch (par) {
-		case 7:
-			if (narg > 1 && access(strescseq.args[1], X_OK) != -1)
-				cwd = strescseq.args[1];
 		case 0:
 		case 1:
 		case 2:
 			if (narg > 1)
 				xsettitle(strescseq.args[1]);
 			return;
+		case 7:
+			if (narg > 1 && access(strescseq.args[1], X_OK) != -1) {
+				if (cwd)
+					free(cwd);
+				cwd = strdup(strescseq.args[1]);
+			}
+			break;
 		case 52:
 			if (narg > 2) {
 				char *dec;

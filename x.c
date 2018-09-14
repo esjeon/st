@@ -209,7 +209,6 @@ static XSelection xsel;
 static TermWindow win;
 
 extern char *cwd;
-extern char *plumber_cmd;
 
 /* Font Ring Cache */
 enum {
@@ -642,7 +641,8 @@ void
 brelease(XEvent *e)
 {
 	pid_t child;
-	char cmd[100 + strlen(cwd)];
+	char *buf[LEN(plumbcmd) + 2];
+	int i;
 
 	if (IS_SET(MODE_MOUSE) && !(e->xbutton.state & forceselmod)) {
 		mousereport(e);
@@ -653,13 +653,21 @@ brelease(XEvent *e)
 		selpaste(NULL);
 	else if (e->xbutton.button == Button1)
 		mousesel(e, 1);
-	else if (e->xbutton.button == Button3) {
+	else if (e->xbutton.button == Button3 && xsel.primary != NULL) {
 		switch(child = fork()) {
 			case -1:
+				fprintf(stderr, "Error forking plumber process\n");
 				return;
 			case 0:
-				sprintf(cmd, "(cd %s ; %s %s)", cwd, plumber_cmd, sel.primary);
-				execvp( "sh", (char *const []){ "/bin/sh", "-c", cmd, 0 });
+				close(STDIN_FILENO);
+
+				for (i = 0; i < LEN(plumbcmd)-1; i ++)
+					buf[i] = plumbcmd[i];
+				buf[LEN(plumbcmd)-1] = xsel.primary;
+				buf[LEN(plumbcmd)] = cwd;
+				buf[LEN(plumbcmd)+1] = NULL;
+
+				execvp(buf[0], buf);
 				exit(127);
 		}
 	}

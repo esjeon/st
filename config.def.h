@@ -21,7 +21,7 @@ char *utmp = NULL;
 char *stty_args = "stty raw pass8 nl -echo -iexten -cstopb 38400";
 
 /* right-to-click to plumb */
-static char *plumber = "plumb.sh";
+static char *const plumbcmd[] = { "plumb.sh", NULL };
 
 /* identification sequence returned in DA and DECID */
 char *vtiden = "\033[?6c";
