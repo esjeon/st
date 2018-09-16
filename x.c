@@ -238,6 +238,7 @@ static char *usedfont = NULL;
 static double usedfontsize = 0;
 static double defaultfontsize = 0;
 
+static char *opt_alpha = NULL;
 static char *opt_class = NULL;
 static char **opt_cmd  = NULL;
 static char *opt_embed = NULL;
@@ -777,6 +778,8 @@ xloadcols(void)
 		}
 
 	/* set alpha value of bg color */
+	if (opt_alpha)
+		alpha = strtof(opt_alpha, NULL);
 	dc.col[defaultbg].color.alpha = (0xffff * alpha) / 0xff;
 	dc.col[defaultbg].pixel &= 0x00111111;
 	dc.col[defaultbg].pixel |= alpha << 24;
@@ -1960,6 +1963,9 @@ main(int argc, char *argv[])
 	ARGBEGIN {
 	case 'a':
 		allowaltscreen = 0;
+		break;
+	case 'A':
+		opt_alpha = EARGF(usage());
 		break;
 	case 'c':
 		opt_class = EARGF(usage());
