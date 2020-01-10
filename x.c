@@ -1857,6 +1857,7 @@ run(void)
 				continue;
 			die("select failed: %s\n", strerror(errno));
 		}
+		dodraw = 0;
 		if (FD_ISSET(ttyfd, &rfd)) {
 			ttyread();
 			if (blinktimeout) {
@@ -1864,6 +1865,7 @@ run(void)
 				if (!blinkset)
 					MODBIT(win.mode, 0, MODE_BLINK);
 			}
+			dodraw = 1;
 		}
 
 		if (FD_ISSET(xfd, &rfd))
@@ -1874,7 +1876,6 @@ run(void)
 		drawtimeout.tv_nsec =  (1000 * 1E6)/ xfps;
 		tv = &drawtimeout;
 
-		dodraw = 0;
 		if (blinktimeout && TIMEDIFF(now, lastblink) > blinktimeout) {
 			tsetdirtattr(ATTR_BLINK);
 			win.mode ^= MODE_BLINK;
